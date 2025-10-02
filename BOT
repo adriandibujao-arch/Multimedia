@@ -1,2 +1,151 @@
-discord.py>=2.3.0
-python-dotenv>=1.0.0
+import discord
+from discord.ext import commands
+import config
+import asyncio
+from datetime import datetime
+import io
+
+class MediaLoggerBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.messages = True
+        intents.message_content = True
+        intents.guilds = True
+        
+        super().__init__(command_prefix='!', intents=intents)
+        
+    async def setup_hook(self):
+        print(f'Bot {self.user} está listo!')
+        print(f'Canal de logs: {config.LOG_CHANNEL_ID}')
+
+    def is_media_file(self, filename):
+        """Verifica si el archivo es multimedia"""
+        extension = filename.lower().split('.')[-1]
+        
+        for file_type, extensions in config.ALLOWED_EXTENSIONS.items():
+            if extension in extensions:
+                return file_type
+        return None
+
+    async def on_message(self, message):
+        # Ignorar mensajes del bot mismo
+        if message.author == self.user:
+            return
+            
+        # Ignorar mensajes sin archivos
+        if not message.attachments:
+            return
+            
+        # Verificar cada archivo adjunto
+        media_files = []
+        for attachment in message.attachments:
+            file_type = self.is_media_file(attachment.filename)
+            if file_type:
+                media_files.append((attachment, file_type))
+        
+        # Si hay archivos multimedia, procesarlos
+        if media_files and config.LOG_CHANNEL_ID:
+            await self.process_media_files(message, media_files)
+            
+        # Procesar comandos normales
+        await self.process_commands(message)
+
+    async def process_media_files(self, message, media_files):
+        """Procesa y reenvía los archivos multimedia al canal de logs"""
+        log_channel = self.get_channel(config.LOG_CHANNEL_ID)
+        
+        if not log_channel:
+            print(f"Error: No se pudo encontrar el canal con ID {config.LOG_CHANNEL_ID}")
+            return
+
+        for attachment, file_type in media_files:
+            try:
+                # Crear embed informativo
+                embed = discord.Embed(
+                    title="📁 Archivo Multimedia Detectado",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                embed.add_field(
+                    name="👤 Usuario",
+                    value=f"{message.author.mention} ({message.author})",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="📂 Canal",
+                    value=f"{message.channel.mention}",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="🔗 Mensaje Original",
+                    value=f"[Ir al mensaje]({message.jump_url})",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="📊 Tipo de Archivo",
+                    value=file_type.upper(),
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="📝 Nombre",
+                    value=attachment.filename,
+                    inline=True
+                )
+                
+                embed.set_footer(text=f"ID: {message.author.id}")
+                
+                # Descargar y reenviar el archivo
+                file_data = await attachment.read()
+                file = discord.File(io.BytesIO(file_data), filename=attachment.filename)
+                
+                await log_channel.send(embed=embed, file=file)
+                print(f"Archivo {attachment.filename} reenviado al canal de logs")
+                
+            except Exception as e:
+                print(f"Error procesando archivo {attachment.filename}: {e}")
+                error_embed = discord.Embed(
+                    title="❌ Error al procesar archivo",
+                    description=f"**Archivo:** {attachment.filename}\n**Error:** {str(e)}",
+                    color=discord.Color.red()
+                )
+                await log_channel.send(embed=error_embed)
+
+    async def on_ready(self):
+        print(f'✅ Bot conectado como {self.user.name}')
+        print(f'📊 Conectado a {len(self.guilds)} servidores')
+        
+        # Establecer actividad
+        activity = discord.Activity(
+            type=discord.ActivityType.watching,
+            name="archivos multimedia"
+        )
+        await self.change_presence(activity=activity)
+
+# Comando para configurar el canal de logs
+@commands.has_permissions(administrator=True)
+async def set_log_channel(ctx, channel: discord.TextChannel):
+    """Establece el canal donde se enviarán los archivos multimedia"""
+    config.LOG_CHANNEL_ID = channel.id
+    embed = discord.Embed(
+        title="✅ Canal de Logs Configurado",
+        description=f"Los archivos multimedia se enviarán a {channel.mention}",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+async def main():
+    bot = MediaLoggerBot()
+    bot.add_command(set_log_channel)
+    
+    try:
+        await bot.start(config.DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        await bot.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
