@@ -1,0 +1,15 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configuración del bot
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', 0))  # ID del canal donde se enviarán los archivos
+
+# Extensiones de archivos permitidas
+ALLOWED_EXTENSIONS = {
+    'image': ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff'],
+    'video': ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv'],
+    'gif': ['gif']
+}
